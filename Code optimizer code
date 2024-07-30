@@ -1,0 +1,173 @@
+#include <stdio.h>
+#include <stdbool.h>
+#include <string.h>
+
+#define MAX_INSTRUCTIONS 100
+#define MAX_VARS 100
+
+typedef enum {
+    NOP,      // No operation
+    ADD,
+    SUB,
+    MUL,
+    DIV,
+    MOV,
+    PRINT_OP // Changed PRINT to PRINT_OP to avoid conflict with PRINT macro
+} OpCode;
+
+typedef struct {
+    OpCode op;
+    char dest[10];
+    char src1[10];
+    char src2[10];
+} Instruction;
+
+typedef struct {
+    Instruction instructions[MAX_INSTRUCTIONS];
+    int count;
+} Program;
+
+void print_program(const Program *program) {
+    printf("Program:\n");
+    for (int i = 0; i < program->count; ++i) {
+        Instruction instr = program->instructions[i];
+        switch (instr.op) {
+            case NOP:
+                printf("NOP\n");
+                break;
+            case ADD:
+                printf("%s = %s + %s\n", instr.dest, instr.src1, instr.src2);
+                break;
+            case SUB:
+                printf("%s = %s - %s\n", instr.dest, instr.src1, instr.src2);
+                break;
+            case MUL:
+                printf("%s = %s * %s\n", instr.dest, instr.src1, instr.src2);
+                break;
+            case DIV:
+                printf("%s = %s / %s\n", instr.dest, instr.src1, instr.src2);
+                break;
+            case MOV:
+                printf("%s = %s\n", instr.dest, instr.src1);
+                break;
+            case PRINT_OP:
+                printf("PRINT %s\n", instr.dest);
+                break;
+        }
+    }
+    printf("\n");
+}
+
+void dead_code_elimination(Program *program) {
+    bool used[MAX_VARS] = {false};
+    char used_vars[MAX_VARS][10] = {0};
+    int used_count = 0;
+
+    // Mark all variables used by PRINT instructions as used
+    for (int i = 0; i < program->count; ++i) {
+        if (program->instructions[i].op == PRINT_OP) {
+            strcpy(used_vars[used_count++], program->instructions[i].dest);
+        }
+    }
+
+    // Traverse instructions backwards to mark necessary computations
+    for (int i = program->count - 1; i >= 0; --i) {
+        Instruction instr = program->instructions[i];
+        bool is_dest_used = false;
+        for (int j = 0; j < used_count; ++j) {
+            if (strcmp(instr.dest, used_vars[j]) == 0) {
+                is_dest_used = true;
+                break;
+            }
+        }
+
+        if (is_dest_used) {
+            if (instr.op == ADD || instr.op == SUB || instr.op == MUL || instr.op == DIV || instr.op == MOV) {
+                strcpy(used_vars[used_count++], instr.src1);
+                if (instr.op != MOV) {
+                    strcpy(used_vars[used_count++], instr.src2);
+                }
+            }
+        }
+    }
+
+    // Remove instructions that produce unused values
+    int new_count = 0;
+    for (int i = 0; i < program->count; ++i) {
+        Instruction instr = program->instructions[i];
+        bool is_dest_used = false;
+        if (instr.op == PRINT_OP) {
+            is_dest_used = true;
+        } else {
+            for (int j = 0; j < used_count; ++j) {
+                if (strcmp(instr.dest, used_vars[j]) == 0) {
+                    is_dest_used = true;
+                    break;
+                }
+            }
+        }
+        if (is_dest_used) {
+            program->instructions[new_count++] = instr;
+        }
+    }
+    program->count = new_count;
+}
+
+void read_program(Program *program) {
+    program->count = 0;
+    printf("Enter Three Address Code (end with 'PRINT <var>' to terminate):\n");
+    char line[100];
+    while (fgets(line, sizeof(line), stdin)) {
+        char dest[10], src1[10], src2[10];
+        OpCode op;
+        // Check for PRINT instruction
+        if (strstr(line, "PRINT") != NULL) {
+            op = PRINT_OP;
+            sscanf(line, "PRINT %s", dest);
+            strcpy(src1, "");  // Set src1 to empty string for PRINT_OP
+            strcpy(src2, "");  // Set src2 to empty string for PRINT_OP
+        }
+        // Check for arithmetic operations
+        else if (sscanf(line, "%[^=]=%[^+]+%s", dest, src1, src2) == 3) {
+            op = ADD;
+        } else if (sscanf(line, "%[^=]=%[^-]-%s", dest, src1, src2) == 3) {
+            op = SUB;
+        } else if (sscanf(line, "%[^=]=%[^]%s", dest, src1, src2) == 3) {
+            op = MUL;
+        } else if (sscanf(line, "%[^=]=%[^/]/%s", dest, src1, src2) == 3) {
+            op = DIV;
+        } else if (sscanf(line, "%[^=]=%s", dest, src1) == 2) {
+            op = MOV;
+            strcpy(src2, "");  // Set src2 to empty string for MOV operation
+        } else {
+            printf("Invalid input format.\n");
+            continue;
+        }
+
+        strcpy(program->instructions[program->count].dest, dest);
+        strcpy(program->instructions[program->count].src1, src1);
+        strcpy(program->instructions[program->count].src2, src2);
+        program->instructions[program->count].op = op;
+        program->count++;
+
+        if (op == PRINT_OP) {
+            break;
+        }
+    }
+}
+
+int main() {
+    Program program;
+    read_program(&program);
+
+    printf("\nOriginal Program:\n");
+    print_program(&program);
+
+    int original_count = program.count;
+    dead_code_elimination(&program);
+
+    printf("\nOptimized Program (reduced from %d lines to %d lines):\n", original_count, program.count);
+    print_program(&program);
+
+    return 0;
+}
